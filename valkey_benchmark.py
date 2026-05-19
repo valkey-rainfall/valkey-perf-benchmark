@@ -1131,6 +1131,11 @@ class ClientRunner:
         # Shutdown current server
         self.server_launcher.shutdown(self.tls_mode)
 
+        # Drop page caches between restarts to prevent accumulated memory
+        # state from causing downward drift in multi-threaded benchmarks
+        from environment_stabilizer import EnvironmentStabilizer
+        EnvironmentStabilizer().drop_caches()
+
         # Start fresh server (module_path is stored in launcher)
         self.server_launcher.launch(
             cluster_mode=self.cluster_mode,

@@ -147,6 +147,15 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--stabilize-environment",
+        action="store_true",
+        default=False,
+        help="Apply OS-level tuning for consistent results (disables ASLR, pins CPU freq, "
+        "disables C-states/boost on x86). Requires sudo. Settings are restored on exit. "
+        "Use for PR comparison reports; omit for dashboard runs to preserve historical comparability.",
+    )
+
+    parser.add_argument(
         "--module",
         type=str,
         default=None,
@@ -779,25 +788,35 @@ def main() -> None:
     init_logging(log_dir / "logs.txt", args.log_level)
 
     # Process all configs
-    for cfg in configs_list:
-        validate_cpu_allocation(cfg)
-        uses_test_groups = "test_groups" in cfg
+    stabilizer = None
+    if args.stabilize_environment:
+        from environment_stabilizer import EnvironmentStabilizer
+        stabilizer = EnvironmentStabilizer()
+        stabilizer.apply()
 
-        # Apply CLI filters to this config
-        if args.groups:
-            cfg["groups_to_run"] = set(int(g.strip()) for g in args.groups.split(","))
-        if args.scenarios:
-            cfg["scenario_filter"] = set(s.strip() for s in args.scenarios.split(","))
+    try:
+        for cfg in configs_list:
+            validate_cpu_allocation(cfg)
+            uses_test_groups = "test_groups" in cfg
 
-        for commit in commits:
-            print(f"=== Processing commit: {commit} ===")
-            run_benchmark_matrix(
-                commit_id=commit,
-                cfg=cfg,
-                args=args,
-                module_path=module_path,
-                uses_test_groups=uses_test_groups,
-            )
+            # Apply CLI filters to this config
+            if args.groups:
+                cfg["groups_to_run"] = set(int(g.strip()) for g in args.groups.split(","))
+            if args.scenarios:
+                cfg["scenario_filter"] = set(s.strip() for s in args.scenarios.split(","))
+
+            for commit in commits:
+                print(f"=== Processing commit: {commit} ===")
+                run_benchmark_matrix(
+                    commit_id=commit,
+                    cfg=cfg,
+                    args=args,
+                    module_path=module_path,
+                    uses_test_groups=uses_test_groups,
+                )
+    finally:
+        if stabilizer:
+            stabilizer.restore()
 
 
 if __name__ == "__main__":
